@@ -10,6 +10,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -323,7 +324,7 @@ func (c *Client) Send(s string) {
 // portions or if the list of targets is missing. If a single word is
 // longer than n bytes, it will be split.
 func SplitPrivmsg(s string, n int) []string {
-	if len(s) < n {
+	if len(s) < n || !utf8.ValidString(s) {
 		return []string{s}
 	}
 	pl := strings.Index(s, " :") + 2
@@ -335,65 +336,31 @@ func SplitPrivmsg(s string, n int) []string {
 		n = 1
 	}
 
-	var out []string
-	var progress []string
-	words := strings.Fields(s)
-	i := 0
-	idx := 0
-	for idx < len(words) {
-		word := words[idx]
-		if i+(len(progress))+len(word) < n {
-			progress = append(progress, word)
-			i += len(word)
-			idx++
-			continue
+	var parts []string
+	for len(s) > n {
+		pos := strings.LastIndex(s[:n], " ")
+		if pos == -1 {
+			pos = n
 		}
-
-		if len(progress) == 0 {
-			split := splitWord(word, n)
-			out = append(out, split[:len(split)-1]...)
-			progress = []string{split[len(split)-1]}
-			i = len(split[len(split)-1])
-			idx++
-			continue
-		}
-
-		out = append(out, strings.Join(progress, " "))
-		progress = nil
-		i = 0
-	}
-	if len(progress) > 0 {
-		out = append(out, strings.Join(progress, " "))
-	}
-	for i, e := range out {
-		out[i] = repeat + e
-	}
-	return out
-}
-
-func splitWord(s string, n int) []string {
-	var out []string
-	var runes []rune
-	for len(s) > 0 {
-		i := 0
-		for i < n && len(s) > 0 {
-			r, size := utf8.DecodeRuneInString(s)
-			esize := size
-			if r == utf8.RuneError && size == 1 {
-				esize = 3
-			}
-			if i+esize > n && n >= utf8.UTFMax {
+		dir := -1
+		for {
+			if r, size := utf8.DecodeLastRuneInString(s[:pos]); r != utf8.RuneError || size != 1 {
 				break
 			}
-			runes = append(runes, r)
-			s = s[size:]
-			i += esize
+			pos += dir
+			if pos == 0 {
+				pos = 1
+				dir = 1
+			}
 		}
-		out = append(out, string(runes))
-		runes = nil
+		parts = append(parts, s[:pos])
+		s = strings.TrimLeftFunc(s[pos:], unicode.IsSpace)
 	}
-	if len(runes) > 0 {
-		out = append(out, string(runes))
+	if len(s) > 0 {
+		parts = append(parts, s)
 	}
-	return out
+	for i := range parts {
+		parts[i] = repeat + parts[i]
+	}
+	return parts
 }
