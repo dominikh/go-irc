@@ -153,9 +153,6 @@ type Mux struct {
 
 func NewMux() *Mux {
 	mux := &Mux{new(sync.RWMutex), make(map[string][]Handler)}
-	mux.HandleFunc("PING", func(c *Client, m *Message) {
-		c.Send(fmt.Sprintf("PONG %s", m.Params[0]))
-	})
 	return mux
 }
 
@@ -268,7 +265,11 @@ func (c *Client) Read() (*Message, error) {
 		}
 		return nil, err
 	}
-	return Parse(c.scanner.Text()), nil
+	m := Parse(c.scanner.Text())
+	if m.Command == "PING" {
+		c.Send(fmt.Sprintf("PONG %s", m.Params[0]))
+	}
+	return m, nil
 }
 
 func (c *Client) readLoop() {
