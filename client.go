@@ -54,7 +54,7 @@ func parseParams(params string) []string {
 		if len(params) == 1 {
 			return []string{""}
 		}
-		return []string{params[1:]}
+		return []string{strings.TrimRight(params[1:], " ")}
 	}
 
 	idx := strings.Index(params, " :")
@@ -62,7 +62,7 @@ func parseParams(params string) []string {
 		return strings.Split(params, " ")
 	}
 
-	left, right := params[:idx], params[idx+2:]
+	left, right := params[:idx], strings.TrimRight(params[idx+2:], " ")
 	var out []string
 	if len(left) > 0 {
 		out = strings.Split(left, " ")
