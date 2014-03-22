@@ -10,6 +10,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"unicode/utf8"
 )
 
 type Message struct {
@@ -305,4 +306,94 @@ func (c *Client) Login() {
 
 func (c *Client) Send(s string) {
 	c.chSend <- s
+}
+
+// Split splits a PRIVMSG or NOTICE into many messages, each at most n
+// bytes long and repeating the command and target list. Split assumes
+// UTF-8 encoding but does not support combining characters. It does
+// not split in the middle of words.
+//
+// IRC messages can be at most 512 bytes long. This includes the
+// terminating \r\n as well as the message prefix that the server
+// prepends, consisting of a : sign and a hostmask. For optimal
+// results, n should be calculated accordingly, but a safe value that
+// doesn't require calculations would be around 350.
+//
+// The result is undefined if n is smaller than the command and target
+// portions or if the list of targets is missing. If a single word is
+// longer than n bytes, it will be split.
+func SplitPrivmsg(s string, n int) []string {
+	if len(s) < n {
+		return []string{s}
+	}
+	pl := strings.Index(s, " :") + 2
+	repeat := s[:pl]
+	s = s[pl:]
+
+	n -= pl
+	if n <= 0 {
+		n = 1
+	}
+
+	var out []string
+	var progress []string
+	words := strings.Fields(s)
+	i := 0
+	idx := 0
+	for idx < len(words) {
+		word := words[idx]
+		if i+(len(progress))+len(word) < n {
+			progress = append(progress, word)
+			i += len(word)
+			idx++
+			continue
+		}
+
+		if len(progress) == 0 {
+			split := splitWord(word, n)
+			out = append(out, split[:len(split)-1]...)
+			progress = []string{split[len(split)-1]}
+			i = len(split[len(split)-1])
+			idx++
+			continue
+		}
+
+		out = append(out, strings.Join(progress, " "))
+		progress = nil
+		i = 0
+	}
+	if len(progress) > 0 {
+		out = append(out, strings.Join(progress, " "))
+	}
+	for i, e := range out {
+		out[i] = repeat + e
+	}
+	return out
+}
+
+func splitWord(s string, n int) []string {
+	var out []string
+	var runes []rune
+	for len(s) > 0 {
+		i := 0
+		for i < n && len(s) > 0 {
+			r, size := utf8.DecodeRuneInString(s)
+			esize := size
+			if r == utf8.RuneError && size == 1 {
+				esize = 3
+			}
+			if i+esize > n && n >= utf8.UTFMax {
+				break
+			}
+			runes = append(runes, r)
+			s = s[size:]
+			i += esize
+		}
+		out = append(out, string(runes))
+		runes = nil
+	}
+	if len(runes) > 0 {
+		out = append(out, string(runes))
+	}
+	return out
 }
