@@ -166,7 +166,7 @@ func (mux *Mux) HandleFunc(command string, handler func(*Client, *Message)) {
 	mux.Handle(command, HandlerFunc(handler))
 }
 
-func (mux *Mux) Handler(m *Message) (hs []Handler) {
+func (mux *Mux) Handlers(m *Message) (hs []Handler) {
 	mux.mu.RLock()
 	defer mux.mu.RUnlock()
 	hs = mux.m[m.Command]
@@ -175,7 +175,7 @@ func (mux *Mux) Handler(m *Message) (hs []Handler) {
 }
 
 func (mux *Mux) Process(c *Client, m *Message) {
-	hs := mux.Handler(m)
+	hs := mux.Handlers(m)
 	if hs != nil {
 		for _, h := range hs {
 			m := m.Copy()
@@ -200,7 +200,7 @@ type Muxer interface {
 	Handler
 	Handle(command string, handler Handler)
 	HandleFunc(command string, handler func(*Client, *Message))
-	Handler(m *Message) (hs []Handler)
+	Handlers(m *Message) (hs []Handler)
 }
 
 type Client struct {
