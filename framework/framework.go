@@ -12,13 +12,10 @@ type WhoisHelper struct {
 	pending map[string][]whois
 }
 
-func (w *WhoisHelper) Register(mux interface {
-	HandleFunc(command string, handler func(*irc.Client, *irc.Message))
-}) {
+func (w *WhoisHelper) Register(mux irc.Muxer) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	// TODO better method name
-	// TODO find a name for the anonymous interface
 	if w.pending == nil {
 		w.pending = make(map[string][]whois)
 	}

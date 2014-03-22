@@ -186,17 +186,29 @@ func HandleFunc(command string, handler func(*Client, *Message)) {
 	DefaultMux.HandleFunc(command, handler)
 }
 
+type Authenticator interface {
+	Authenticate(c *Client)
+}
+
+type Muxer interface {
+	Handler
+	Handle(command string, handler Handler)
+	HandleFunc(command string, handler func(*Client, *Message))
+	Handler(m *Message) (hs []Handler)
+}
+
 type Client struct {
-	Handler   Handler
-	TLSConfig *tls.Config
-	User      string
-	Nick      string
-	Name      string
-	Password  string
-	conn      net.Conn
-	chErr     chan error
-	chSend    chan string
-	scanner   *bufio.Scanner
+	Mux           Muxer
+	TLSConfig     *tls.Config
+	Authenticator Authenticator
+	User          string
+	Nick          string
+	Name          string
+	Password      string
+	conn          net.Conn
+	chErr         chan error
+	chSend        chan string
+	scanner       *bufio.Scanner
 }
 
 func (c *Client) Dial(network, addr string) error {
@@ -219,6 +231,9 @@ func (c *Client) DialTLS(network, addr string) error {
 }
 
 func (c *Client) init() {
+	if c.Mux == nil {
+		c.Mux = DefaultMux
+	}
 	c.chErr = make(chan error)
 	c.chSend = make(chan string)
 	c.scanner = bufio.NewScanner(c.conn)
@@ -227,7 +242,11 @@ func (c *Client) init() {
 
 func (c *Client) Process() error {
 	go c.readLoop()
-	go c.Login()
+	if c.Authenticator != nil {
+		go c.Authenticator.Authenticate(c)
+	} else {
+		go c.Login()
+	}
 	return <-c.chErr
 }
 
@@ -244,10 +263,6 @@ func (c *Client) Read() (*Message, error) {
 }
 
 func (c *Client) readLoop() {
-	handler := c.Handler
-	if handler == nil {
-		handler = DefaultMux
-	}
 	for {
 		m, err := c.Read()
 		if err != nil {
@@ -255,7 +270,7 @@ func (c *Client) readLoop() {
 			return
 		}
 		log.Println("→", m.Raw)
-		handler.Process(c, m)
+		c.Mux.Process(c, m)
 	}
 }
 
