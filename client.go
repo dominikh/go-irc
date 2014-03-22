@@ -166,7 +166,9 @@ func (mux *Mux) HandleFunc(command string, handler func(*Client, *Message)) {
 func (mux *Mux) Handler(m *Message) (hs []Handler) {
 	mux.mu.RLock()
 	defer mux.mu.RUnlock()
-	return mux.m[m.Command]
+	hs = mux.m[m.Command]
+	hs = append(hs, mux.m[""]...)
+	return hs
 }
 
 func (mux *Mux) Process(c *Client, m *Message) {
