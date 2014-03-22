@@ -19,6 +19,12 @@ type Message struct {
 	Params  []string
 }
 
+func (m *Message) Copy() *Message {
+	m2 := &Message{m.Raw, m.Prefix, m.Command, make([]string, len(m.Params))}
+	copy(m2.Params, m.Params)
+	return m2
+}
+
 func pad(in []string, n int) []string {
 	if len(in) == n {
 		return in
@@ -175,7 +181,8 @@ func (mux *Mux) Process(c *Client, m *Message) {
 	hs := mux.Handler(m)
 	if hs != nil {
 		for _, h := range hs {
-			go h.Process(c, m)
+			m := m.Copy()
+			go h.Process(c, m.Copy())
 		}
 	}
 }
