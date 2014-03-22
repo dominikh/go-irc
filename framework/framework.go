@@ -10,19 +10,22 @@ import (
 )
 
 type WhoisHelper struct {
-	mu      sync.RWMutex
+	*irc.Mux
+	mu sync.RWMutex
+
 	pending map[string][]whois
 }
 
-func (w *WhoisHelper) Register(mux irc.Muxer) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	// TODO better method name
-	if w.pending == nil {
-		w.pending = make(map[string][]whois)
+func NewWhoisHelper() *WhoisHelper {
+	w := &WhoisHelper{
+		Mux:     irc.NewMux(),
+		pending: make(map[string][]whois),
 	}
-	mux.HandleFunc("311", w.whoisUser)
-	mux.HandleFunc("318", w.endOfWhois)
+
+	w.HandleFunc("311", w.whoisUser)
+	w.HandleFunc("318", w.endOfWhois)
+
+	return w
 }
 
 func (w *WhoisHelper) whoisUser(c *irc.Client, m *irc.Message) {

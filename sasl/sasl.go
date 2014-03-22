@@ -8,6 +8,7 @@ import (
 )
 
 type SASL struct {
+	*irc.Mux
 	Mechanism Mechanism
 }
 
@@ -21,6 +22,19 @@ type Plain struct {
 	Password string
 }
 
+func New(m Mechanism) *SASL {
+	s := &SASL{irc.NewMux(), m}
+
+	s.HandleFunc("CAP", s.auth1)
+	s.HandleFunc("AUTHENTICATE", s.auth2)
+	s.HandleFunc("903", s.auth3)
+	s.HandleFunc("904", s.auth3)
+	s.HandleFunc("905", s.auth3)
+	s.HandleFunc("907", s.auth3)
+
+	return s
+}
+
 func (p *Plain) Name() string {
 	return "PLAIN"
 }
@@ -30,12 +44,6 @@ func (p *Plain) Generate(_ string) string {
 }
 
 func (s *SASL) Authenticate(c *irc.Client) {
-	c.Mux.HandleFunc("CAP", s.auth1)
-	c.Mux.HandleFunc("AUTHENTICATE", s.auth2)
-	c.Mux.HandleFunc("903", s.auth3)
-	c.Mux.HandleFunc("904", s.auth3)
-	c.Mux.HandleFunc("905", s.auth3)
-	c.Mux.HandleFunc("907", s.auth3)
 	c.Send("CAP REQ :sasl")
 	c.Login()
 }
