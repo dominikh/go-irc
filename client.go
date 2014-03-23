@@ -223,6 +223,7 @@ type Muxer interface {
 }
 
 type Client struct {
+	mu            sync.RWMutex
 	Mux           Muxer
 	TLSConfig     *tls.Config
 	Authenticator Authenticator
@@ -233,11 +234,31 @@ type Client struct {
 	// TODO proper documentation. The ISupport field will be
 	// automatically set to a default value during dialing and will
 	// then be populated by the IRC server.
-	ISupport *ISupport
-	conn     net.Conn
-	chErr    chan error
-	chSend   chan string
-	scanner  *bufio.Scanner
+	ISupport  *ISupport
+	connected []string
+	conn      net.Conn
+	chErr     chan error
+	chSend    chan string
+	scanner   *bufio.Scanner
+}
+
+func inStrings(in []string, s string) bool {
+	for _, e := range in {
+		if e == s {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *Client) Connected() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return inStrings(c.connected, "422") ||
+		(inStrings(c.connected, "001") &&
+			inStrings(c.connected, "002") &&
+			inStrings(c.connected, "003") &&
+			inStrings(c.connected, "004"))
 }
 
 func (c *Client) Dial(network, addr string) error {
@@ -295,6 +316,14 @@ func (c *Client) Read() (*Message, error) {
 		c.Sendf("PONG %s", m.Params[0])
 	case RPL_ISUPPORT:
 		c.ISupport.Parse(m)
+	case "001", "002", "003", "004", "422":
+		c.mu.Lock()
+		c.connected = append(c.connected, m.Command)
+		c.mu.Unlock()
+
+		if c.Connected() {
+			c.Mux.Process(c, &Message{Command: "irc:connected"})
+		}
 	}
 
 	return m, nil
