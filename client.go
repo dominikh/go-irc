@@ -516,3 +516,7 @@ func (c *Client) Join(channel, password string) {
 		c.Sendf("JOIN %s %s", channel, password)
 	}
 }
+
+func (c *Client) SetNick(nick string) {
+	c.Sendf("NICK %s", nick)
+}
