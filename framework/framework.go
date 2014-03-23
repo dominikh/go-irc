@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"time"
 	"honnef.co/go/irc"
 )
 
@@ -197,5 +198,90 @@ func AvoidNickCollision(client *irc.Client, fn func(oldNick string) (newNick str
 func SimpleNickChanger(suffix string) func(oldNick string) (newNick string) {
 	return func(old string) string {
 		return old + suffix
+	}
+}
+
+type NickRegainer struct {
+	*irc.Mux
+	mu       sync.Mutex
+	wanted   string
+	client   *irc.Client
+	on       bool
+	interval time.Duration
+	quit     chan struct{}
+	hasQuit  chan struct{}
+}
+
+func NewNickRegainer(client *irc.Client, wanted string, interval time.Duration) *NickRegainer {
+	mux := irc.NewMux()
+
+	nr := &NickRegainer{
+		Mux:      mux,
+		wanted:   wanted,
+		client:   client,
+		interval: interval,
+	}
+
+	return nr
+}
+
+func (nr *NickRegainer) Start() {
+	nr.mu.Lock()
+	defer nr.mu.Unlock()
+	if nr.on {
+		return
+	}
+	nr.quit = make(chan struct{})
+	nr.hasQuit = make(chan struct{})
+	nr.on = true
+	go nr.monitor()
+}
+
+func (nr *NickRegainer) Stop() {
+	nr.mu.Lock()
+	defer nr.mu.Unlock()
+	if !nr.on {
+		return
+	}
+	close(nr.quit)
+	<-nr.hasQuit
+	nr.on = false
+}
+
+func (nr *NickRegainer) SetWanted(wanted string) {
+	nr.mu.Lock()
+	defer nr.mu.Unlock()
+	nr.wanted = wanted
+}
+
+func (nr *NickRegainer) SetInterval(d time.Duration) {
+	nr.mu.Lock()
+	wasOn := nr.on
+	if nr.on {
+		nr.Stop()
+	}
+	nr.interval = d
+	if wasOn {
+		nr.Start()
+	}
+}
+
+func (nr *NickRegainer) monitor() {
+	ticker := time.NewTicker(nr.interval)
+	for {
+		select {
+		case <-ticker.C:
+			if !nr.client.Connected() {
+				continue
+			}
+			if nr.client.CurrentNick() == nr.wanted {
+				continue
+			}
+			nr.client.SetNick(nr.wanted)
+		case <-nr.quit:
+			ticker.Stop()
+			close(nr.hasQuit)
+			return
+		}
 	}
 }
