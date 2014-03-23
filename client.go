@@ -323,10 +323,10 @@ func (c *Client) Sendf(format string, args ...interface{}) {
 	c.Send(fmt.Sprintf(format, args...))
 }
 
-// Split splits a PRIVMSG or NOTICE into many messages, each at most n
-// bytes long and repeating the command and target list. Split assumes
-// UTF-8 encoding but does not support combining characters. It does
-// not split in the middle of words.
+// SplitMessage splits a PRIVMSG or NOTICE into many messages, each at
+// most n bytes long and repeating the command and target list. Split
+// assumes UTF-8 encoding but does not support combining characters.
+// It does not split in the middle of words.
 //
 // IRC messages can be at most 512 bytes long. This includes the
 // terminating \r\n as well as the message prefix that the server
@@ -337,7 +337,7 @@ func (c *Client) Sendf(format string, args ...interface{}) {
 // The result is undefined if n is smaller than the command and target
 // portions or if the list of targets is missing. If a single word is
 // longer than n bytes, it will be split.
-func SplitPrivmsg(s string, n int) []string {
+func SplitMessage(s string, n int) []string {
 	if len(s) < n || !utf8.ValidString(s) {
 		return []string{s}
 	}
