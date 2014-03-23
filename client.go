@@ -234,12 +234,13 @@ type Client struct {
 	// TODO proper documentation. The ISupport field will be
 	// automatically set to a default value during dialing and will
 	// then be populated by the IRC server.
-	ISupport  *ISupport
-	connected []string
-	conn      net.Conn
-	chErr     chan error
-	chSend    chan string
-	scanner   *bufio.Scanner
+	ISupport    *ISupport
+	currentNick string
+	connected   []string
+	conn        net.Conn
+	chErr       chan error
+	chSend      chan string
+	scanner     *bufio.Scanner
 }
 
 func inStrings(in []string, s string) bool {
@@ -319,11 +320,21 @@ func (c *Client) Read() (*Message, error) {
 	case "001", "002", "003", "004", "422":
 		c.mu.Lock()
 		c.connected = append(c.connected, m.Command)
+		c.currentNick = m.Params[0]
 		c.mu.Unlock()
 
 		if c.Connected() {
 			c.Mux.Process(c, &Message{Command: "irc:connected"})
 		}
+	case "NICK":
+		// We don't need to lock for reading here, there is no
+		// concurrent writer to c.currentNick
+		if m.Prefix.Nick != c.currentNick {
+			break
+		}
+		c.mu.Lock()
+		c.currentNick = m.Params[0]
+		c.mu.Unlock()
 	}
 
 	return m, nil
@@ -519,4 +530,10 @@ func (c *Client) Join(channel, password string) {
 
 func (c *Client) SetNick(nick string) {
 	c.Sendf("NICK %s", nick)
+}
+
+func (c *Client) CurrentNick() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.currentNick
 }
