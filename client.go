@@ -214,10 +214,14 @@ type Client struct {
 	Nick          string
 	Name          string
 	Password      string
-	conn          net.Conn
-	chErr         chan error
-	chSend        chan string
-	scanner       *bufio.Scanner
+	// TODO proper documentation. The ISupport field will be
+	// automatically set to a default value during dialing and will
+	// then be populated by the IRC server.
+	ISupport *ISupport
+	conn     net.Conn
+	chErr    chan error
+	chSend   chan string
+	scanner  *bufio.Scanner
 }
 
 func (c *Client) Dial(network, addr string) error {
@@ -243,6 +247,7 @@ func (c *Client) init() {
 	if c.Mux == nil {
 		c.Mux = DefaultMux
 	}
+	c.ISupport = NewISupport()
 	c.chErr = make(chan error)
 	c.chSend = make(chan string)
 	c.scanner = bufio.NewScanner(c.conn)
@@ -269,9 +274,13 @@ func (c *Client) Read() (*Message, error) {
 		return nil, err
 	}
 	m := Parse(c.scanner.Text())
-	if m.Command == "PING" {
-		c.Send(fmt.Sprintf("PONG %s", m.Params[0]))
+	switch m.Command {
+	case "PING":
+		c.Sendf("PONG %s", m.Params[0])
+	case RPL_ISUPPORT:
+		c.ISupport.Parse(m)
 	}
+
 	return m, nil
 }
 
