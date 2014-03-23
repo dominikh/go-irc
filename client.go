@@ -368,6 +368,60 @@ func (c *Client) NoticeSplit(target, message string, n int) {
 		c.Send(msg)
 	}
 }
+
+func (c *Client) Reply(m *Message, response string) {
+	if m.Command != "PRIVMSG" && m.Command != "NOTICE" {
+		panic("cannot reply to " + m.Command)
+	}
+	target, ok := c.ChannelForMsg(m)
+	if !ok {
+		// TODO message was sent to us directly, not a channel
+		target = m.Prefix.Nick
+	}
+	c.Privmsg(target, response)
+}
+
+func (c *Client) ReplySplit(m *Message, response string, n int) {
+	if m.Command != "PRIVMSG" && m.Command != "NOTICE" {
+		panic("cannot reply to " + m.Command)
+	}
+	target, ok := c.ChannelForMsg(m)
+	if !ok {
+		// TODO message was sent to us directly, not a channel
+		target = m.Prefix.Nick
+	}
+	c.PrivmsgSplit(target, response, n)
+}
+
+func inRunes(runes []rune, search rune) bool {
+	for _, rune := range runes {
+		if rune == search {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *Client) ChannelForMsg(m *Message) (string, bool) {
+	if len(m.Params) == 0 {
+		return "", false
+	}
+	switch m.Command {
+	case "INVITE", RPL_CHANNELMODEIS, RPL_BANLIST:
+		return m.Params[1], true
+	case RPL_NAMEREPLY:
+		return m.Params[2], true
+	default:
+		if inRunes(c.ISupport.ChanTypes, []rune(m.Params[0])[0]) {
+			return m.Params[0], true
+		}
+		if m.IsNumeric() && len(m.Params) > 1 && inRunes(c.ISupport.ChanTypes, []rune(m.Params[1])[0]) {
+			return m.Params[1], true
+		}
+	}
+	return "", false
+}
+
 // SplitMessage splits a PRIVMSG or NOTICE into many messages, each at
 // most n bytes long and repeating the command and target list. Split
 // assumes UTF-8 encoding but does not support combining characters.
