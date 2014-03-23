@@ -339,6 +339,35 @@ func (c *Client) Sendf(format string, args ...interface{}) {
 	c.Send(fmt.Sprintf(format, args...))
 }
 
+// Privmsg sends a PRIVMSG message to target.
+func (c *Client) Privmsg(target, message string) {
+	c.Sendf("PRIVMSG %s :%s", target, message)
+}
+
+// PrivmsgSplit sends a PRIVMSG message to target and splits it into
+// chunks of n. See SplitMessage for more information on how said
+// splitting is done.
+func (c *Client) PrivmsgSplit(target, message string, n int) {
+	s := fmt.Sprintf("PRIVMSG %s :%s", target, message)
+	for _, msg := range SplitMessage(s, n) {
+		c.Send(msg)
+	}
+}
+
+// Notice sends a NOTICE message to target.
+func (c *Client) Notice(target, message string) {
+	c.Sendf("NOTICE %s :%s", target, message)
+}
+
+// NoticeSplit sends a NOTICE message to target and splits it into
+// chunks of n. See SplitMessage for more information on how said
+// splitting is done.
+func (c *Client) NoticeSplit(target, message string, n int) {
+	s := fmt.Sprintf("NOTICE %s :%s", target, message)
+	for _, msg := range SplitMessage(s, n) {
+		c.Send(msg)
+	}
+}
 // SplitMessage splits a PRIVMSG or NOTICE into many messages, each at
 // most n bytes long and repeating the command and target list. Split
 // assumes UTF-8 encoding but does not support combining characters.
