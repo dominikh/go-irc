@@ -60,14 +60,17 @@ func TestMessageParsing(t *testing.T) {
 			&Message{Command: "FOO",
 				Params: []string{"bar", ""}}},
 		{":example.com NOTICE * :*** Looking up your hostname...",
-			&Message{Prefix: "example.com", Command: "NOTICE",
+			&Message{Prefix: Mask{Host: "example.com"}, Command: "NOTICE",
 				Params: []string{"*", "*** Looking up your hostname..."}}},
 		{":example.com 001 some_nick :Welcome to the Internet Relay Chat",
-			&Message{Prefix: "example.com", Command: "001",
+			&Message{Prefix: Mask{Host: "example.com"}, Command: "001",
 				Params: []string{"some_nick", "Welcome to the Internet Relay Chat"}}},
 		{"FOO :bar ",
 			&Message{Command: "FOO",
 				Params: []string{"bar"}}},
+		{":nick!user@host CMD",
+			&Message{Prefix: Mask{Nick: "nick", User: "user", Host: "host"}, Command: "CMD",
+				Params: []string{}}},
 	}
 
 	for _, test := range table {

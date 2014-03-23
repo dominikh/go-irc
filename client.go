@@ -14,9 +14,16 @@ import (
 	"unicode/utf8"
 )
 
+type Mask struct {
+	Nick string
+	User string
+	Host string
+}
+
 type Message struct {
+	// The raw IRC message
 	Raw     string
-	Prefix  string
+	Prefix  Mask
 	Command string
 	Params  []string
 }
@@ -42,7 +49,16 @@ func Parse(s string) *Message {
 
 	if s[0] == ':' {
 		parts := pad(strings.SplitN(s, " ", 3), 3)
-		m.Prefix = parts[0][1:]
+		prefix := parts[0][1:]
+		if strings.Index(prefix, "!") == -1 {
+			m.Prefix.Host = prefix
+		} else {
+			parts := strings.FieldsFunc(prefix, func(r rune) bool { return r == '!' || r == '@' })
+			parts = pad(parts, 3)
+			m.Prefix.Nick = parts[0]
+			m.Prefix.User = parts[1]
+			m.Prefix.Host = parts[2]
+		}
 		m.Command = parts[1]
 		m.Params = parseParams(parts[2])
 		return m
