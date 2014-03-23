@@ -299,14 +299,18 @@ func (c *Client) writeLoop() {
 
 func (c *Client) Login() {
 	if len(c.Password) > 0 {
-		c.Send(fmt.Sprintf("PASS %s", c.Password))
+		c.Sendf("PASS %s", c.Password)
 	}
-	c.Send(fmt.Sprintf("USER %s 0 * :%s", c.User, c.Name))
-	c.Send(fmt.Sprintf("NICK %s", c.Nick))
+	c.Sendf("USER %s 0 * :%s", c.User, c.Name)
+	c.Sendf("NICK %s", c.Nick)
 }
 
 func (c *Client) Send(s string) {
 	c.chSend <- s
+}
+
+func (c *Client) Sendf(format string, args ...interface{}) {
+	c.Send(fmt.Sprintf(format, args...))
 }
 
 // Split splits a PRIVMSG or NOTICE into many messages, each at most n
