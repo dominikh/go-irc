@@ -22,9 +22,10 @@ type Message struct {
 }
 
 func (m *Message) Copy() *Message {
-	m2 := &Message{m.Raw, m.Prefix, m.Command, make([]string, len(m.Params))}
+	m2 := *m
+	m2.Params = make([]string, len(m.Params))
 	copy(m2.Params, m.Params)
-	return m2
+	return &m2
 }
 
 func pad(in []string, n int) []string {
