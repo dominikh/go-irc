@@ -416,7 +416,7 @@ func (c *Client) ReplySplit(m *Message, response string, n int) {
 	}
 	target, ok := c.ChannelForMsg(m)
 	if !ok {
-		// TODO message was sent to us directly, not a channel
+		// message was sent to us directly, not a channel
 		target = m.Prefix.Nick
 	}
 	c.PrivmsgSplit(target, response, n)
@@ -505,4 +505,14 @@ func SplitMessage(s string, n int) []string {
 		parts[i] = repeat + parts[i]
 	}
 	return parts
+}
+
+func (c *Client) Join(channel, password string) {
+	// FIXME do not return until we actually joined the channel. or
+	// maybe put that in the framework?
+	if password == "" {
+		c.Sendf("JOIN %s", channel)
+	} else {
+		c.Sendf("JOIN %s %s", channel, password)
+	}
 }
