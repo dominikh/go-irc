@@ -111,3 +111,84 @@ func TestCTCPParsing(t *testing.T) {
 		}
 	}
 }
+
+func stringsEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func TestMessageSplitting(t *testing.T) {
+	table := []struct {
+		in  string
+		out []string
+		n   int
+	}{
+		{
+			"PRIVMSG #target :An ordinary message with a couple words",
+			[]string{
+				"PRIVMSG #target :An ordinary",
+				"PRIVMSG #target :message with",
+				"PRIVMSG #target :a couple",
+				"PRIVMSG #target :words",
+			},
+			30,
+		},
+
+		{
+			"PRIVMSG #target :A message with Pneumonoultramicroscopicsilicovolcanoconiosis",
+			[]string{
+				"PRIVMSG #target :A message",
+				"PRIVMSG #target :with",
+				"PRIVMSG #target :Pneumonoultra",
+				"PRIVMSG #target :microscopicsi",
+				"PRIVMSG #target :licovolcanoco",
+				"PRIVMSG #target :niosis",
+			},
+			30,
+		},
+		{
+			"PRIVMSG #target :驚いた彼は道を走っていった。",
+			[]string{
+				"PRIVMSG #target :驚いた彼",
+				"PRIVMSG #target :は道を走",
+				"PRIVMSG #target :っていっ",
+				"PRIVMSG #target :た。",
+			},
+			30,
+		},
+		{
+			"PRIVMSG #target :驚いた彼は道を走っていった。",
+			[]string{
+				"PRIVMSG #target :驚",
+				"PRIVMSG #target :い",
+				"PRIVMSG #target :た",
+				"PRIVMSG #target :彼",
+				"PRIVMSG #target :は",
+				"PRIVMSG #target :道",
+				"PRIVMSG #target :を",
+				"PRIVMSG #target :走",
+				"PRIVMSG #target :っ",
+				"PRIVMSG #target :て",
+				"PRIVMSG #target :い",
+				"PRIVMSG #target :っ",
+				"PRIVMSG #target :た",
+				"PRIVMSG #target :。",
+			},
+			5,
+		},
+	}
+
+	for i, test := range table {
+		r := SplitMessage(test.in, test.n)
+		if !stringsEqual(test.out, r) {
+			t.Errorf("split #%d, expected %#v, got %#v", i, test.out, r)
+		}
+	}
+}
