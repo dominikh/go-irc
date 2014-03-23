@@ -27,10 +27,10 @@ func New(m Mechanism) *SASL {
 
 	s.HandleFunc("CAP", s.auth1)
 	s.HandleFunc("AUTHENTICATE", s.auth2)
-	s.HandleFunc("903", s.auth3)
-	s.HandleFunc("904", s.auth3)
-	s.HandleFunc("905", s.auth3)
-	s.HandleFunc("907", s.auth3)
+	s.HandleFunc(irc.RPL_SASLSUCCESS, s.auth3)
+	s.HandleFunc(irc.RPL_SASLFAILED, s.auth3)
+	s.HandleFunc(irc.RPL_SASLERROR, s.auth3)
+	s.HandleFunc(irc.RPL_SASLALREADYAUTH, s.auth3)
 
 	return s
 }
