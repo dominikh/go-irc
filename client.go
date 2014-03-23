@@ -268,6 +268,7 @@ func (c *Client) Dial(network, addr string) error {
 		return err
 	}
 	c.conn = conn
+	c.init()
 	return nil
 }
 
