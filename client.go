@@ -26,6 +26,10 @@ type Message struct {
 	Prefix  Mask
 	Command string
 	Params  []string
+	// The signal/command name to use for routing. In most cases, this
+	// will equal the command. In some cases, such as CTCP messages,
+	// it will be different.
+	Signal string
 }
 
 func (m *Message) Copy() *Message {
@@ -60,6 +64,7 @@ func Parse(s string) *Message {
 			m.Prefix.Host = parts[2]
 		}
 		m.Command = parts[1]
+		m.Signal = m.Command
 		m.Params = parseParams(parts[2])
 		return m
 	}
@@ -175,20 +180,20 @@ func NewMux() *Mux {
 	return mux
 }
 
-func (mux *Mux) Handle(command string, handler Handler) {
+func (mux *Mux) Handle(signal string, handler Handler) {
 	mux.mu.Lock()
 	defer mux.mu.Unlock()
-	mux.m[command] = append(mux.m[command], handler)
+	mux.m[signal] = append(mux.m[signal], handler)
 }
 
-func (mux *Mux) HandleFunc(command string, handler func(*Client, *Message)) {
-	mux.Handle(command, HandlerFunc(handler))
+func (mux *Mux) HandleFunc(signal string, handler func(*Client, *Message)) {
+	mux.Handle(signal, HandlerFunc(handler))
 }
 
 func (mux *Mux) Handlers(m *Message) (hs []Handler) {
 	mux.mu.RLock()
 	defer mux.mu.RUnlock()
-	hs = mux.m[m.Command]
+	hs = mux.m[m.Signal]
 	hs = append(hs, mux.m[""]...)
 	return hs
 }
@@ -205,10 +210,10 @@ func (mux *Mux) Process(c *Client, m *Message) {
 
 var DefaultMux = NewMux()
 
-func Handle(command string, handler Handler) { DefaultMux.Handle(command, handler) }
+func Handle(signal string, handler Handler) { DefaultMux.Handle(signal, handler) }
 
-func HandleFunc(command string, handler func(*Client, *Message)) {
-	DefaultMux.HandleFunc(command, handler)
+func HandleFunc(signal string, handler func(*Client, *Message)) {
+	DefaultMux.HandleFunc(signal, handler)
 }
 
 type Authenticator interface {
@@ -325,7 +330,7 @@ func (c *Client) Read() (*Message, error) {
 		c.mu.Unlock()
 
 		if c.Connected() {
-			c.Mux.Process(c, &Message{Command: "irc:connected"})
+			c.Mux.Process(c, &Message{Signal: "irc:connected"})
 		}
 	case "NICK":
 		// We don't need to lock for reading here, there is no

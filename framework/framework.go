@@ -107,7 +107,7 @@ type pattern struct {
 func (mux *RegexpMuxer) Process(c *irc.Client, m *irc.Message) {
 	mux.mu.RLock()
 	defer mux.mu.RUnlock()
-	candidates := mux.m[m.Command]
+	candidates := mux.m[m.Signal]
 	candidates = append(candidates, mux.m[""]...)
 	for _, p := range candidates {
 		p := p
@@ -139,12 +139,12 @@ func (mux *RegexpMuxer) Handle(pat string, handler irc.Handler) {
 	mux.mu.Lock()
 	defer mux.mu.Unlock()
 	parts := strings.SplitN(pat, "/", 2)
-	command := parts[0]
+	signal := parts[0]
 	var rx *regexp.Regexp
 	if len(parts) == 2 {
 		rx = regexp.MustCompile(parts[1])
 	}
-	mux.m[command] = append(mux.m[command], pattern{rx, handler})
+	mux.m[signal] = append(mux.m[signal], pattern{rx, handler})
 }
 
 func (mux *RegexpMuxer) HandleFunc(pattern string, handler func(*irc.Client, *irc.Message)) {
@@ -155,7 +155,7 @@ func (mux *RegexpMuxer) Handlers(m *irc.Message) []irc.Handler {
 	mux.mu.RLock()
 	defer mux.mu.RUnlock()
 	var hs []irc.Handler
-	candidates := mux.m[m.Command]
+	candidates := mux.m[m.Signal]
 	candidates = append(candidates, mux.m[""]...)
 	for _, p := range candidates {
 		if p.rx == nil {
