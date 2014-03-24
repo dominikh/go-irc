@@ -285,3 +285,12 @@ func (nr *NickRegainer) monitor() {
 		}
 	}
 }
+
+func CTCPTime(c *irc.Client, m *irc.Message) {
+	c.ReplyCTCP(m, time.Now().Format("Mon Jan 02 15:04:05 MST 2006"))
+}
+
+func CTCPPing(c *irc.Client, m *irc.Message) {
+	ctcp, _ := m.CTCP()
+	c.ReplyCTCP(m, strings.Join(ctcp.Params, " "))
+}
