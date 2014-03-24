@@ -22,7 +22,8 @@ type User struct {
 func Whois(c *irc.Client, co *Coalesce, nick string) User {
 	// TODO handle 263 (rate limit), 401 (NOSUCHNICK), 402 (NOSUCHSERVER)
 	ch := make(chan []*irc.Message, 1)
-	new := co.Subscribe([]string{"311", "318"}, nick, ch)
+	new := co.Subscribe([]string{"311", "313", "317", "318", "319", "350", "401", "402"},
+		[]string{"318", "401", "402"}, nick, ch)
 	if new {
 		c.Send(fmt.Sprintf("WHOIS %s %s", nick, nick))
 	}
@@ -254,7 +255,8 @@ type Input struct {
 
 type Interested struct {
 	Messages []*irc.Message
-	Inform   map[string][]chan []*irc.Message
+	EndedBy  []string
+	Inform   []chan []*irc.Message
 }
 
 type Coalesce struct {
@@ -266,13 +268,16 @@ func NewCoalesce() *Coalesce {
 	return &Coalesce{m: make(map[Input]*Interested)}
 }
 
-func (co *Coalesce) Subscribe(commands []string,
+func (co *Coalesce) Subscribe(commands []string, ends []string,
 	param string, ch chan []*irc.Message) (new bool) {
 
 	// FIXME handle timeouts of sent requests
 	co.mu.Lock()
 	defer co.mu.Unlock()
 	var interested *Interested
+	both := []string{}
+	both = append(both, commands...)
+	both = append(both, ends...)
 	for _, c := range commands {
 		input := Input{c, param}
 		var ok bool
@@ -284,9 +289,7 @@ func (co *Coalesce) Subscribe(commands []string,
 
 	if interested == nil {
 		new = true
-		interested = &Interested{
-			Inform: make(map[string][]chan []*irc.Message),
-		}
+		interested = &Interested{}
 	}
 
 	for _, c := range commands {
@@ -294,9 +297,8 @@ func (co *Coalesce) Subscribe(commands []string,
 		co.m[input] = interested
 	}
 
-	inform := interested.Inform[commands[len(commands)-1]]
-	inform = append(inform, ch)
-	interested.Inform[commands[len(commands)-1]] = inform
+	interested.EndedBy = ends
+	interested.Inform = append(interested.Inform, ch)
 	return new
 }
 
@@ -313,21 +315,25 @@ func (co *Coalesce) Process(c *irc.Client, m *irc.Message) {
 		return
 	}
 	interested.Messages = append(interested.Messages, m)
-	inform, ok := interested.Inform[m.Command]
-	if !ok {
+	inform := false
+	for _, s := range interested.EndedBy {
+		if s == m.Command {
+			inform = true
+			break
+		}
+	}
+	if !inform {
 		return
 	}
-	for _, ch := range inform {
+	for _, ch := range interested.Inform {
 		messages := make([]*irc.Message, len(interested.Messages))
 		copy(messages, interested.Messages)
 		ch <- messages
 	}
-	delete(interested.Inform, m.Command)
-	if len(interested.Inform) == 0 {
-		for key, value := range co.m {
-			if value == interested {
-				delete(co.m, key)
-			}
+
+	for key, value := range co.m {
+		if value == interested {
+			delete(co.m, key)
 		}
 	}
 }
