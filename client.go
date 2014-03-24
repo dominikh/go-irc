@@ -33,6 +33,10 @@ type Message struct {
 	Signal string
 }
 
+// Copy performs a deep copy of a message. This is useful when passing
+// messages to functions that should have ownership over the message,
+// including the slice of parameters. Usually this will be used when
+// implementing muxers.
 func (m *Message) Copy() *Message {
 	m2 := *m
 	m2.Params = make([]string, len(m.Params))
@@ -49,6 +53,7 @@ func pad(in []string, n int) []string {
 	return out
 }
 
+// Parse parses an IRC message as it may be sent or received.
 func Parse(s string) *Message {
 	m := &Message{Raw: s}
 
@@ -108,6 +113,8 @@ func (m *Message) String() string {
 	return m.Raw
 }
 
+// IsNumeric reports whether the message's command is numeric (e.g.
+// 001) as opposed to a string (e.g. "JOIN".)
 func (m *Message) IsNumeric() bool {
 	if len(m.Command) != 3 {
 		return false
@@ -118,8 +125,11 @@ func (m *Message) IsNumeric() bool {
 		s[2] >= '0' && s[2] <= '9'
 }
 
+// IsError reports whether the message's command denotes an error,
+// i.e. whether it is numeric and the number code starts with either a
+// 4 or a 5.
 func (m *Message) IsError() bool {
-	return m.IsNumeric() && m.Command[0] >= '4' && m.Command[0] <= '5'
+	return m.IsNumeric() && (m.Command[0] == '4' || m.Command[0] == '5')
 }
 
 func (m *Message) IsCTCP() bool {
