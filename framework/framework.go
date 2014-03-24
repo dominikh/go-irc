@@ -10,75 +10,6 @@ import (
 	"honnef.co/go/irc"
 )
 
-type WhoisHelper struct {
-	*irc.Mux
-	mu sync.RWMutex
-
-	pending map[string][]whois
-}
-
-func NewWhoisHelper() *WhoisHelper {
-	w := &WhoisHelper{
-		Mux:     irc.NewMux(),
-		pending: make(map[string][]whois),
-	}
-
-	w.HandleFunc("311", w.whoisUser)
-	w.HandleFunc("318", w.endOfWhois)
-
-	return w
-}
-
-func (w *WhoisHelper) whoisUser(c *irc.Client, m *irc.Message) {
-	w.mu.RLock()
-	defer w.mu.RUnlock()
-	// TODO check for right number of arguments
-	whoises, ok := w.pending[m.Params[1]]
-	if !ok {
-		return
-	}
-	for _, whois := range whoises {
-		whois.u.Nick = m.Params[1]
-		whois.u.User = m.Params[2]
-		whois.u.Host = m.Params[3]
-		whois.u.Name = m.Params[5]
-	}
-}
-
-func (w *WhoisHelper) endOfWhois(c *irc.Client, m *irc.Message) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	// TODO check for right number of arguments
-	whoises, ok := w.pending[m.Params[1]]
-	if !ok {
-		return
-	}
-	for _, whois := range whoises {
-		whois.ch <- whois.u
-	}
-	delete(w.pending, m.Params[1])
-}
-
-func (w *WhoisHelper) Whois(c *irc.Client, nick string) *User {
-	// TODO handle case if nick not found
-	// TODO add timeout
-	ch := make(chan *User)
-	w.mu.Lock()
-	s, ok := w.pending[nick]
-	w.pending[nick] = append(s, whois{new(User), ch})
-	if !ok {
-		c.Send(fmt.Sprintf("WHOIS %s %s", nick, nick))
-	}
-	w.mu.Unlock()
-
-	return <-ch
-}
-
-type whois struct {
-	u  *User
-	ch chan *User
-}
-
 type User struct {
 	Nick     string
 	Name     string
@@ -86,6 +17,27 @@ type User struct {
 	Host     string
 	Channels []string
 	Idle     int
+}
+
+func Whois(c *irc.Client, co *Coalesce, nick string) User {
+	// TODO handle 263 (rate limit), 401 (NOSUCHNICK), 402 (NOSUCHSERVER)
+	ch := make(chan []*irc.Message, 1)
+	new := co.Subscribe([]string{"311", "318"}, nick, ch)
+	if new {
+		c.Send(fmt.Sprintf("WHOIS %s %s", nick, nick))
+	}
+	u := User{}
+	msgs := <-ch
+	for _, msg := range msgs {
+		switch msg.Command {
+		case "311":
+			u.Nick = msg.Params[1]
+			u.User = msg.Params[2]
+			u.Host = msg.Params[3]
+			u.Name = msg.Params[5]
+		}
+	}
+	return u
 }
 
 type RegexpMuxer struct {
@@ -293,4 +245,89 @@ func CTCPTime(c *irc.Client, m *irc.Message) {
 func CTCPPing(c *irc.Client, m *irc.Message) {
 	ctcp, _ := m.CTCP()
 	c.ReplyCTCP(m, strings.Join(ctcp.Params, " "))
+}
+
+type Input struct {
+	Command string
+	Param   string
+}
+
+type Interested struct {
+	Messages []*irc.Message
+	Inform   map[string][]chan []*irc.Message
+}
+
+type Coalesce struct {
+	mu sync.Mutex
+	m  map[Input]*Interested
+}
+
+func NewCoalesce() *Coalesce {
+	return &Coalesce{m: make(map[Input]*Interested)}
+}
+
+func (co *Coalesce) Subscribe(commands []string,
+	param string, ch chan []*irc.Message) (new bool) {
+
+	// FIXME handle timeouts of sent requests
+	co.mu.Lock()
+	defer co.mu.Unlock()
+	var interested *Interested
+	for _, c := range commands {
+		input := Input{c, param}
+		var ok bool
+		interested, ok = co.m[input]
+		if ok {
+			break
+		}
+	}
+
+	if interested == nil {
+		new = true
+		interested = &Interested{
+			Inform: make(map[string][]chan []*irc.Message),
+		}
+	}
+
+	for _, c := range commands {
+		input := Input{c, param}
+		co.m[input] = interested
+	}
+
+	inform := interested.Inform[commands[len(commands)-1]]
+	inform = append(inform, ch)
+	interested.Inform[commands[len(commands)-1]] = inform
+	return new
+}
+
+func (co *Coalesce) Process(c *irc.Client, m *irc.Message) {
+	co.mu.Lock()
+	defer co.mu.Unlock()
+
+	if len(m.Params) < 2 {
+		return
+	}
+	input := Input{Command: m.Command, Param: m.Params[1]}
+	interested, ok := co.m[input]
+	if !ok {
+		return
+	}
+	interested.Messages = append(interested.Messages, m)
+	inform, ok := interested.Inform[m.Command]
+	if !ok {
+		return
+	}
+	for _, ch := range inform {
+		messages := make([]*irc.Message, len(interested.Messages))
+		copy(messages, interested.Messages)
+		ch <- messages
+	}
+	delete(interested.Inform, m.Command)
+	if len(interested.Inform) == 0 {
+		for key, value := range co.m {
+			if value == interested {
+				delete(co.m, key)
+			}
+		}
+	}
 }
