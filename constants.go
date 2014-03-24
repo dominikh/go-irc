@@ -69,6 +69,7 @@ const (
 	RPL_TOPIC           = "332"
 	RPL_INVITING        = "341"
 	RPL_SUMMONING       = "342"
+	RPL_WHOISACCOUNT    = "350"
 	RPL_VERSION         = "351"
 	RPL_WHOREPLY        = "352"
 	RPL_ENDOFWHO        = "315"
