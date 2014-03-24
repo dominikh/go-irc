@@ -154,13 +154,13 @@ func NewRegexpMuxer() *RegexpMuxer {
 	}
 }
 
-func AvoidNickCollision(client *irc.Client, fn func(oldNick string) (newNick string)) {
-	client.Mux.HandleFunc(irc.ERR_NICKNAMEINUSE, func(c *irc.Client, m *irc.Message) {
+func AvoidNickCollision(fn func(oldNick string) (newNick string)) irc.HandlerFunc {
+	return func(c *irc.Client, m *irc.Message) {
 		if c.Connected() {
 			return
 		}
 		c.SetNick(fn(m.Params[1]))
-	})
+	}
 }
 
 func SimpleNickChanger(suffix string) func(oldNick string) (newNick string) {
