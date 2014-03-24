@@ -77,6 +77,7 @@ func Parse(s string) *Message {
 
 	parts := pad(strings.SplitN(s, " ", 2), 2)
 	m.Command = parts[0]
+	m.Signal = m.Command
 	m.Params = parseParams(parts[1])
 	return m
 }
