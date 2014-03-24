@@ -353,6 +353,12 @@ func (c *Client) Read() (*Message, error) {
 		c.mu.Lock()
 		c.currentNick = m.Params[0]
 		c.mu.Unlock()
+	case "PRIVMSG", "NOTICE":
+		if ctcp, err := m.CTCP(); err == nil {
+			m := m.Copy()
+			m.Signal = "ctcp:" + ctcp.Command
+			c.Mux.Process(c, m)
+		}
 	}
 
 	return m, nil
@@ -450,6 +456,14 @@ func (c *Client) ReplySplit(m *Message, response string, n int) {
 		target = m.Prefix.Nick
 	}
 	c.PrivmsgSplit(target, response, n)
+}
+
+func (c *Client) ReplyCTCP(m *Message, response string) {
+	if !m.IsCTCP() {
+		panic("message is not a CTCP")
+	}
+	ctcp, _ := m.CTCP()
+	c.Notice(m.Prefix.Nick, fmt.Sprintf("\001%s %s\001", ctcp.Command, response))
 }
 
 func inRunes(runes []rune, search rune) bool {
