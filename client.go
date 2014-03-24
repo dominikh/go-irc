@@ -10,6 +10,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 	"unicode/utf8"
 )
@@ -317,6 +318,7 @@ func (c *Client) Read() (*Message, error) {
 		}
 		return nil, err
 	}
+	c.conn.SetReadDeadline(time.Now().Add(240 * time.Second))
 	m := Parse(c.scanner.Text())
 	switch m.Command {
 	case "PING":
@@ -361,6 +363,7 @@ func (c *Client) readLoop() {
 func (c *Client) writeLoop() {
 	for s := range c.chSend {
 		log.Println("←", s) // TODO configurable logger
+		c.conn.SetWriteDeadline(time.Now().Add(240 * time.Second))
 		_, err := io.WriteString(c.conn, s+"\n")
 		if err != nil {
 			c.chErr <- err
