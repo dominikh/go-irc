@@ -3,6 +3,7 @@ package framework
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -11,12 +12,15 @@ import (
 )
 
 type User struct {
-	Nick     string
-	Name     string
-	User     string
-	Host     string
-	Channels []string
-	Idle     int
+	Nick       string
+	Name       string
+	User       string
+	Host       string
+	Channels   []string
+	Idle       int
+	Oper       bool
+	SignedOnAt time.Time
+	Account    string
 }
 
 func Whois(c *irc.Client, co *Coalesce, nick string) User {
@@ -36,6 +40,17 @@ func Whois(c *irc.Client, co *Coalesce, nick string) User {
 			u.User = msg.Params[2]
 			u.Host = msg.Params[3]
 			u.Name = msg.Params[5]
+		case irc.RPL_WHOISOPERATOR:
+			u.Oper = true
+		case irc.RPL_WHOISIDLE:
+			i, _ := strconv.Atoi(msg.Params[2])
+			u.Idle = i
+			i, _ = strconv.Atoi(msg.Params[3])
+			u.SignedOnAt = time.Unix(int64(i), 0)
+		case irc.RPL_WHOISCHANNELS:
+			u.Channels = strings.Fields(msg.Params[2])
+		case irc.RPL_WHOISACCOUNT:
+			u.Account = msg.Params[2]
 		}
 	}
 	return u
