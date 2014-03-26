@@ -381,7 +381,7 @@ func (c *Client) writeLoop() {
 	for s := range c.chSend {
 		log.Println("←", s) // TODO configurable logger
 		c.conn.SetWriteDeadline(time.Now().Add(240 * time.Second))
-		_, err := io.WriteString(c.conn, s+"\n")
+		_, err := io.WriteString(c.conn, s+"\r\n")
 		if err != nil {
 			c.chErr <- err
 			return
