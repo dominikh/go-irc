@@ -307,6 +307,8 @@ func (c *Client) init() {
 	c.chErr = make(chan error)
 	c.chSend = make(chan string)
 	c.scanner = bufio.NewScanner(c.conn)
+	c.connected = nil
+	c.currentNick = ""
 	go c.writeLoop()
 }
 
