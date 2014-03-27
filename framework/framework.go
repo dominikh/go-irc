@@ -263,6 +263,12 @@ func CTCPPing(c *irc.Client, m *irc.Message) {
 	c.ReplyCTCP(m, strings.Join(ctcp.Params, " "))
 }
 
+func StaticCTCPReply(reply string) irc.HandlerFunc {
+	return func(c *irc.Client, m *irc.Message) {
+		c.ReplyCTCP(m, reply)
+	}
+}
+
 type Input struct {
 	Command string
 	Param   string
