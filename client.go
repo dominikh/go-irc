@@ -343,10 +343,6 @@ func (c *Client) Read() (*Message, error) {
 		c.connected = append(c.connected, m.Command)
 		c.currentNick = m.Params[0]
 		c.mu.Unlock()
-
-		if c.Connected() {
-			c.Mux.Process(c, &Message{Signal: "irc:connected"})
-		}
 	case "NICK":
 		// We don't need to lock for reading here, there is no
 		// concurrent writer to c.currentNick
@@ -356,12 +352,6 @@ func (c *Client) Read() (*Message, error) {
 		c.mu.Lock()
 		c.currentNick = m.Params[0]
 		c.mu.Unlock()
-	case "PRIVMSG", "NOTICE":
-		if ctcp, err := m.CTCP(); err == nil {
-			m := m.Copy()
-			m.Signal = "ctcp:" + ctcp.Command
-			c.Mux.Process(c, m)
-		}
 	}
 
 	return m, nil
@@ -375,6 +365,20 @@ func (c *Client) readLoop() {
 			return
 		}
 		log.Println("→", m.Raw)
+
+		switch m.Command {
+		case "001", "002", "003", "004", "422":
+			if c.Connected() {
+				c.Mux.Process(c, &Message{Signal: "irc:connected"})
+			}
+		case "PRIVMSG", "NOTICE":
+			if ctcp, err := m.CTCP(); err == nil {
+				m := m.Copy()
+				m.Signal = "ctcp:" + ctcp.Command
+				c.Mux.Process(c, m)
+			}
+		}
+
 		c.Mux.Process(c, m)
 	}
 }
