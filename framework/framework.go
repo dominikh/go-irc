@@ -2,6 +2,9 @@ package framework
 
 import (
 	"fmt"
+	"io"
+	"log"
+	"net"
 	"regexp"
 	"strconv"
 	"strings"
@@ -356,5 +359,36 @@ func (co *Coalesce) Process(c *irc.Client, m *irc.Message) {
 		if value == interested {
 			delete(co.m, key)
 		}
+	}
+}
+
+// Retry executes a function in a loop that continues as long as the
+// function's error return is a temporary network error, a timeout or
+// an EOF. On all other errors, or no error at all, it will terminate.
+//
+// This function can be used for a simple reconnect loop that only
+// reconnects on network failure and doesn't reconnect in the case of
+// a programming error or an intended termination of the connection.
+func Retry(fn func() error) error {
+	var err error
+	for {
+		if err != nil {
+			log.Printf("Reconnecting due to error: %s", err)
+		}
+		err = fn()
+		if err == nil {
+			return nil
+		}
+
+		if err, ok := err.(*net.OpError); ok && (err.Temporary() || err.Timeout()) {
+			// TODO exponential backoff
+			time.Sleep(1 * time.Second)
+			continue
+		}
+		if err == io.EOF {
+			time.Sleep(1 * time.Second)
+			continue
+		}
+		return err
 	}
 }
