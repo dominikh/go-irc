@@ -255,9 +255,11 @@ type Client struct {
 	currentNick string
 	connected   []string
 	conn        net.Conn
-	chErr       chan error
 	chSend      chan string
+	chQuit      chan struct{}
 	scanner     *bufio.Scanner
+	dead        bool
+	Err         error
 }
 
 func inStrings(in []string, s string) bool {
@@ -279,7 +281,15 @@ func (c *Client) Connected() bool {
 			inStrings(c.connected, "004"))
 }
 
+var ErrDeadClient = errors.New("dead client")
+
 func (c *Client) Dial(network, addr string) error {
+	c.mu.Lock()
+	if c.dead {
+		return ErrDeadClient
+	}
+	c.mu.Unlock()
+
 	conn, err := net.Dial(network, addr)
 	if err != nil {
 		return err
@@ -290,6 +300,12 @@ func (c *Client) Dial(network, addr string) error {
 }
 
 func (c *Client) DialTLS(network, addr string) error {
+	c.mu.Lock()
+	if c.dead {
+		return ErrDeadClient
+	}
+	c.mu.Unlock()
+
 	conn, err := tls.Dial(network, addr, c.TLSConfig)
 	if err != nil {
 		return err
@@ -300,69 +316,117 @@ func (c *Client) DialTLS(network, addr string) error {
 }
 
 func (c *Client) init() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.Mux == nil {
 		c.Mux = DefaultMux
 	}
 	c.ISupport = NewISupport()
-	c.chErr = make(chan error)
 	c.chSend = make(chan string)
+	c.chQuit = make(chan struct{})
 	c.scanner = bufio.NewScanner(c.conn)
 	c.connected = nil
 	c.currentNick = ""
 	go c.writeLoop()
 }
 
+func (c *Client) error(err error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.Err != nil {
+		return
+	}
+	c.Err = err
+	c.dead = true
+	c.conn.Close()
+	close(c.chQuit)
+}
+
 func (c *Client) Process() error {
-	go c.readLoop()
+	go c.pingLoop()
 	if c.Authenticator != nil {
 		go c.Authenticator.Authenticate(c)
 	} else {
 		go c.Login()
 	}
-	return <-c.chErr
+	return c.readLoop()
 }
 
-func (c *Client) Read() (*Message, error) {
+type readReply struct {
+	msg *Message
+	err error
+}
+
+func (c *Client) read(ch chan readReply) {
 	ok := c.scanner.Scan()
 	if !ok {
 		err := c.scanner.Err()
 		if err == nil {
-			return nil, io.EOF
+			err = io.EOF
 		}
-		return nil, err
+		c.error(err)
+		return
 	}
 	c.conn.SetReadDeadline(time.Now().Add(240 * time.Second))
 	m := Parse(c.scanner.Text())
-	switch m.Command {
-	case "PING":
-		c.Sendf("PONG %s", m.Params[0])
-	case RPL_ISUPPORT:
-		c.ISupport.Parse(m)
-	case "001", "002", "003", "004", "422":
-		c.mu.Lock()
-		c.connected = append(c.connected, m.Command)
-		c.currentNick = m.Params[0]
-		c.mu.Unlock()
-	case "NICK":
-		// We don't need to lock for reading here, there is no
-		// concurrent writer to c.currentNick
-		if m.Prefix.Nick != c.currentNick {
-			break
-		}
-		c.mu.Lock()
-		c.currentNick = m.Params[0]
-		c.mu.Unlock()
-	}
-
-	return m, nil
+	ch <- readReply{m, nil}
 }
 
-func (c *Client) readLoop() {
+func (c *Client) Read() (*Message, error) {
+	select {
+	case <-c.chQuit:
+		return nil, c.Err
+	default:
+	}
+
+	ch := make(chan readReply, 1)
+	go c.read(ch)
+	select {
+	case reply := <-ch:
+		m := reply.msg
+		switch m.Command {
+		case "PING":
+			c.Sendf("PONG %s", reply.msg.Params[0])
+		case RPL_ISUPPORT:
+			c.ISupport.Parse(m)
+		case "001", "002", "003", "004", "422":
+			c.mu.Lock()
+			c.connected = append(c.connected, m.Command)
+			c.currentNick = m.Params[0]
+			c.mu.Unlock()
+		case "NICK":
+			// We don't need to lock for reading here, there is no
+			// concurrent writer to c.currentNick
+			if m.Prefix.Nick != c.currentNick {
+				break
+			}
+			c.mu.Lock()
+			c.currentNick = m.Params[0]
+			c.mu.Unlock()
+		}
+		return reply.msg, reply.err
+	case <-c.chQuit:
+		return nil, c.Err
+	}
+}
+
+func (c *Client) pingLoop() {
+	ticker := time.NewTicker(120 * time.Second)
+	for {
+		select {
+		case <-ticker.C:
+			c.Send("PING :0")
+		case <-c.chQuit:
+			return
+		}
+	}
+}
+
+func (c *Client) readLoop() error {
 	for {
 		m, err := c.Read()
 		if err != nil {
-			c.chErr <- err
-			return
+			return err
 		}
 		log.Println("→", m.Raw)
 
@@ -384,12 +448,24 @@ func (c *Client) readLoop() {
 }
 
 func (c *Client) writeLoop() {
-	for s := range c.chSend {
-		log.Println("←", s) // TODO configurable logger
-		c.conn.SetWriteDeadline(time.Now().Add(240 * time.Second))
-		_, err := io.WriteString(c.conn, s+"\r\n")
-		if err != nil {
-			c.chErr <- err
+	for {
+		select {
+		case s := <-c.chSend:
+			log.Println("←", s) // TODO configurable logger
+			c.conn.SetWriteDeadline(time.Now().Add(240 * time.Second))
+			_, err := io.WriteString(c.conn, s+"\r\n")
+			if err != nil {
+				c.error(err)
+				// drain remaining messages
+				for {
+					select {
+					case <-c.chSend:
+					default:
+					}
+				}
+				return
+			}
+		case <-c.chQuit:
 			return
 		}
 	}
@@ -404,7 +480,10 @@ func (c *Client) Login() {
 }
 
 func (c *Client) Send(s string) {
-	c.chSend <- s
+	select {
+	case c.chSend <- s:
+	case <-c.chQuit:
+	}
 }
 
 func (c *Client) Sendf(format string, args ...interface{}) {
