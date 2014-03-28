@@ -46,6 +46,10 @@ const (
 	ERR_UMODEUNKNOWNFLAG = "501"
 	ERR_USERSDONTMATCH   = "502"
 
+	RPL_WELCOME         = "001"
+	RPL_YOURHOST        = "002"
+	RPL_CREATED         = "003"
+	RPL_MYINFO          = "004"
 	RPL_ISUPPORT        = "005"
 	RPL_NONE            = "300"
 	RPL_USERHOST        = "302"

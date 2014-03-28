@@ -29,8 +29,22 @@ type User struct {
 func Whois(c *irc.Client, co *Coalesce, nick string) User {
 	// TODO handle 263 (rate limit), 401 (NOSUCHNICK), 402 (NOSUCHSERVER)
 	ch := make(chan []*irc.Message, 1)
-	new := co.Subscribe([]string{"311", "313", "317", "318", "319", "350", "401", "402"},
-		[]string{"318", "401", "402"}, nick, ch)
+	new := co.Subscribe(
+		[]string{
+			irc.RPL_WHOISUSER,
+			irc.RPL_WHOISOPERATOR,
+			irc.RPL_WHOISIDLE,
+			irc.RPL_ENDOFWHOIS,
+			irc.RPL_WHOISCHANNELS,
+			irc.RPL_WHOISACCOUNT,
+			irc.ERR_NOSUCHNICK,
+			irc.ERR_NOSUCHSERVER,
+		},
+		[]string{
+			irc.RPL_ENDOFWHOIS,
+			irc.ERR_NOSUCHNICK,
+			irc.ERR_NOSUCHSERVER,
+		}, nick, ch)
 	if new {
 		c.Send(fmt.Sprintf("WHOIS %s %s", nick, nick))
 	}
@@ -38,7 +52,7 @@ func Whois(c *irc.Client, co *Coalesce, nick string) User {
 	msgs := <-ch
 	for _, msg := range msgs {
 		switch msg.Command {
-		case "311":
+		case irc.RPL_WHOISUSER:
 			u.Nick = msg.Params[1]
 			u.User = msg.Params[2]
 			u.Host = msg.Params[3]

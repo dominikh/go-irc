@@ -274,11 +274,11 @@ func inStrings(in []string, s string) bool {
 func (c *Client) Connected() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return inStrings(c.connected, "422") ||
-		(inStrings(c.connected, "001") &&
-			inStrings(c.connected, "002") &&
-			inStrings(c.connected, "003") &&
-			inStrings(c.connected, "004"))
+	return inStrings(c.connected, ERR_NOMOTD) ||
+		(inStrings(c.connected, RPL_WELCOME) &&
+			inStrings(c.connected, RPL_YOURHOST) &&
+			inStrings(c.connected, RPL_CREATED) &&
+			inStrings(c.connected, RPL_MYINFO))
 }
 
 var ErrDeadClient = errors.New("dead client")
@@ -389,7 +389,7 @@ func (c *Client) Read() (*Message, error) {
 			c.Sendf("PONG %s", reply.msg.Params[0])
 		case RPL_ISUPPORT:
 			c.ISupport.Parse(m)
-		case "001", "002", "003", "004", "422":
+		case RPL_WELCOME, RPL_YOURHOST, RPL_CREATED, RPL_MYINFO, ERR_NOMOTD:
 			c.mu.Lock()
 			c.connected = append(c.connected, m.Command)
 			c.currentNick = m.Params[0]
@@ -431,7 +431,7 @@ func (c *Client) readLoop() error {
 		log.Println("→", m.Raw)
 
 		switch m.Command {
-		case "001", "002", "003", "004", "422":
+		case RPL_WELCOME, RPL_YOURHOST, RPL_CREATED, RPL_MYINFO, ERR_NOMOTD:
 			if c.Connected() {
 				c.Mux.Process(c, &Message{Signal: "irc:connected"})
 			}
