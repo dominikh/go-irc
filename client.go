@@ -15,6 +15,8 @@ import (
 	"unicode/utf8"
 )
 
+const CTCPDelim = "\001"
+
 type Mask struct {
 	Nick string
 	User string
@@ -549,7 +551,7 @@ func (c *Client) ReplyCTCP(m *Message, response string) {
 		panic("message is not a CTCP")
 	}
 	ctcp, _ := m.CTCP()
-	c.Notice(m.Prefix.Nick, fmt.Sprintf("\001%s %s\001", ctcp.Command, response))
+	c.Notice(m.Prefix.Nick, fmt.Sprintf("%s%s %s%s", CTCPDelim, ctcp.Command, response, CTCPDelim))
 }
 
 func inRunes(runes []rune, search rune) bool {
