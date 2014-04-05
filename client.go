@@ -216,7 +216,6 @@ func (mux *Mux) Process(c *Client, m *Message) {
 	hs := mux.Handlers(m)
 	if hs != nil {
 		for _, h := range hs {
-			m := m.Copy()
 			go h.Process(c, m.Copy())
 		}
 	}
