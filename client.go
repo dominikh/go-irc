@@ -6,8 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -16,6 +16,144 @@ import (
 )
 
 const CTCPDelim = "\001"
+
+type Logger interface {
+	Incoming(*Message)
+	Outgoing(*Message)
+	Info(...interface{})
+	Debug(...interface{})
+	Panic(interface{})
+}
+
+// RawLogger only logs incoming and outgoing messages in their raw
+// form. To differentiate incoming from outgoing messages, it prefixes
+// incoming messages with -> and outgoing messages with <-, in
+// addition to a timestamp.
+type RawLogger struct {
+	mu sync.Mutex
+	W  io.Writer
+}
+
+func (l *RawLogger) Incoming(m *Message) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	fmt.Fprintf(l.W, "%s -> %s\n", time.Now().Format(time.RFC3339), m.Raw)
+}
+
+func (l *RawLogger) Outgoing(m *Message) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	fmt.Fprintf(l.W, "%s <- %s\n", time.Now().Format(time.RFC3339), m.Raw)
+}
+
+func (l *RawLogger) Info(...interface{})  {}
+func (l *RawLogger) Debug(...interface{}) {}
+func (l *RawLogger) Panic(interface{})    {}
+
+// FormattedLogger is a generic logger that supports all types of log
+// messages and prefixes them with tags as well as timestamps.
+//
+// Example output:
+// 2009-11-10T23:00:00Z [INC  ] Incoming message
+// 2009-11-10T23:00:01Z [OUT  ] Outgoing message
+// 2009-11-10T23:00:02Z [INFO ] Info message
+// 2009-11-10T23:00:03Z [DEBUG] Debug messages
+// 2009-11-10T23:00:04Z [PANIC] Panic message
+// 2009-11-10T23:00:04Z [PANIC] Stacktrace line 1
+// ...
+type FormattedLogger struct {
+	mu sync.Mutex
+	W  io.Writer
+}
+
+func (l *FormattedLogger) Incoming(m *Message) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	fmt.Fprintf(l.W, "%s [INC  ] %s\n", time.Now().Format(time.RFC3339), m.Raw)
+}
+
+func (l *FormattedLogger) Outgoing(m *Message) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	fmt.Fprintf(l.W, "%s [OUT  ] %s\n", time.Now().Format(time.RFC3339), m.Raw)
+}
+
+func (l *FormattedLogger) Info(args ...interface{}) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	fmt.Fprintf(l.W, "%s [INFO ] ", time.Now().Format(time.RFC3339))
+	fmt.Fprintln(l.W, args...)
+}
+
+func (l *FormattedLogger) Debug(args ...interface{}) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	fmt.Fprintf(l.W, "%s [DEBUG] ", time.Now().Format(time.RFC3339))
+	fmt.Fprintln(l.W, args...)
+}
+
+func (l *FormattedLogger) Panic(arg interface{}) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	fmt.Fprintf(l.W, "%s [PANIC] ", time.Now().Format(time.RFC3339))
+	fmt.Fprintln(l.W, arg)
+	buf := make([]byte, 64<<10)
+	n := runtime.Stack(buf, false)
+	s := string(buf[:n])
+	lines := strings.Split(s, "\n")
+	for _, line := range lines {
+		fmt.Fprintf(l.W, "%s [PANIC] %s\n", time.Now().Format(time.RFC3339), line)
+	}
+}
+
+// MultiLogger allows using multiple log targets at once. All log
+// messages get sent to all loggers.
+type MultiLogger struct {
+	Loggers []Logger
+}
+
+func (l *MultiLogger) Incoming(m *Message) {
+	for _, ll := range l.Loggers {
+		ll.Incoming(m)
+	}
+}
+
+func (l *MultiLogger) Outgoing(m *Message) {
+	for _, ll := range l.Loggers {
+		ll.Outgoing(m)
+	}
+}
+
+func (l *MultiLogger) Info(args ...interface{}) {
+	for _, ll := range l.Loggers {
+		ll.Info(args...)
+	}
+}
+
+func (l *MultiLogger) Debug(args ...interface{}) {
+	for _, ll := range l.Loggers {
+		ll.Debug(args...)
+	}
+}
+
+func (l *MultiLogger) Panic(arg interface{}) {
+	for _, ll := range l.Loggers {
+		ll.Panic(arg)
+	}
+}
+
+type nullLogger struct{}
+
+func (nullLogger) Incoming(*Message)    {}
+func (nullLogger) Outgoing(*Message)    {}
+func (nullLogger) Info(...interface{})  {}
+func (nullLogger) Debug(...interface{}) {}
+func (nullLogger) Panic(interface{})    {}
+
+var _ Logger = (*RawLogger)(nil)
+var _ Logger = (*FormattedLogger)(nil)
+var _ Logger = (*MultiLogger)(nil)
+var _ Logger = (*nullLogger)(nil)
 
 type Mask struct {
 	Nick string
@@ -247,6 +385,7 @@ type Client struct {
 	// automatically set to a default value during dialing and will
 	// then be populated by the IRC server.
 	ISupport    *ISupport
+	Logger      Logger
 	Mux         Muxer
 	Name        string
 	Nick        string
@@ -321,6 +460,9 @@ func (c *Client) init() {
 	defer c.mu.Unlock()
 	if c.Mux == nil {
 		c.Mux = DefaultMux
+	}
+	if c.Logger == nil {
+		c.Logger = nullLogger{}
 	}
 	c.ISupport = NewISupport()
 	c.chSend = make(chan string)
@@ -429,7 +571,7 @@ func (c *Client) readLoop() error {
 		if err != nil {
 			return err
 		}
-		log.Println("→", m.Raw)
+		c.Logger.Incoming(m)
 
 		switch m.Command {
 		case RPL_WELCOME, RPL_YOURHOST, RPL_CREATED, RPL_MYINFO, ERR_NOMOTD:
@@ -452,7 +594,7 @@ func (c *Client) writeLoop() {
 	for {
 		select {
 		case s := <-c.chSend:
-			log.Println("←", s) // TODO configurable logger
+			c.Logger.Outgoing(Parse(s))
 			c.conn.SetWriteDeadline(time.Now().Add(240 * time.Second))
 			_, err := io.WriteString(c.conn, s+"\r\n")
 			if err != nil {
