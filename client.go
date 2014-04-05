@@ -241,18 +241,19 @@ type Muxer interface {
 }
 
 type Client struct {
-	mu            sync.RWMutex
-	Mux           Muxer
-	TLSConfig     *tls.Config
 	Authenticator Authenticator
-	User          string
-	Nick          string
-	Name          string
-	Password      string
+	Err           error
 	// TODO proper documentation. The ISupport field will be
 	// automatically set to a default value during dialing and will
 	// then be populated by the IRC server.
 	ISupport    *ISupport
+	Mux         Muxer
+	Name        string
+	Nick        string
+	Password    string
+	TLSConfig   *tls.Config
+	User        string
+	mu          sync.RWMutex
 	currentNick string
 	connected   []string
 	conn        net.Conn
@@ -260,7 +261,6 @@ type Client struct {
 	chQuit      chan struct{}
 	scanner     *bufio.Scanner
 	dead        bool
-	Err         error
 }
 
 func inStrings(in []string, s string) bool {
