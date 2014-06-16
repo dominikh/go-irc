@@ -1,0 +1,6 @@
+Still in its early state, made public for some people.
+
+Install
+-------
+
+go get honnef.co/go/irc
