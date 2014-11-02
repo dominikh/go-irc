@@ -527,6 +527,7 @@ func (c *Client) Read() (*Message, error) {
 	select {
 	case reply := <-ch:
 		m := reply.msg
+		c.Logger.Incoming(m)
 		switch m.Command {
 		case "PING":
 			c.Sendf("PONG %s", reply.msg.Params[0])
@@ -571,7 +572,6 @@ func (c *Client) readLoop() error {
 		if err != nil {
 			return err
 		}
-		c.Logger.Incoming(m)
 
 		switch m.Command {
 		case RPL_WELCOME, RPL_YOURHOST, RPL_CREATED, RPL_MYINFO, ERR_NOMOTD:
