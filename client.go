@@ -599,16 +599,6 @@ func (c *Client) writeLoop() {
 			_, err := io.WriteString(c.conn, s+"\r\n")
 			if err != nil {
 				c.error(err)
-				// drain remaining messages
-			drain:
-				for {
-					select {
-					case <-c.chSend:
-					default:
-						break drain
-					}
-				}
-				return
 			}
 		case <-c.chQuit:
 			return
