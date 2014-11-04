@@ -600,10 +600,12 @@ func (c *Client) writeLoop() {
 			if err != nil {
 				c.error(err)
 				// drain remaining messages
+			drain:
 				for {
 					select {
 					case <-c.chSend:
 					default:
+						break drain
 					}
 				}
 				return
