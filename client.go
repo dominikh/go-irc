@@ -397,10 +397,15 @@ type Client struct {
 	currentNick string
 	connected   []string
 	conn        net.Conn
-	chSend      chan string
+	chSend      chan sendMessage
 	chQuit      chan struct{}
 	scanner     *bufio.Scanner
 	dead        bool
+}
+
+type sendMessage struct {
+	msg string
+	ch  chan error
 }
 
 func inStrings(in []string, s string) bool {
@@ -466,7 +471,7 @@ func (c *Client) init() {
 		c.Logger = nullLogger{}
 	}
 	c.ISupport = NewISupport()
-	c.chSend = make(chan string)
+	c.chSend = make(chan sendMessage)
 	c.chQuit = make(chan struct{})
 	c.scanner = bufio.NewScanner(c.conn)
 	c.connected = nil
@@ -594,69 +599,94 @@ func (c *Client) readLoop() error {
 func (c *Client) writeLoop() {
 	for {
 		select {
-		case s := <-c.chSend:
+		case m := <-c.chSend:
+			s := m.msg
 			c.Logger.Outgoing(Parse(s))
 			c.conn.SetWriteDeadline(time.Now().Add(240 * time.Second))
 			_, err := io.WriteString(c.conn, s+"\r\n")
 			if err != nil {
+				m.ch <- err
 				c.error(err)
 			}
+			m.ch <- nil
 		case <-c.chQuit:
 			return
 		}
 	}
 }
 
-func (c *Client) Login() {
+func firstError(errs ...error) error {
+	for _, err := range errs {
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *Client) Login() error {
+	var err1, err2, err3 error
 	if len(c.Password) > 0 {
-		c.Sendf("PASS %s", c.Password)
+		err1 = c.Sendf("PASS %s", c.Password)
 	}
-	c.Sendf("USER %s 0 * :%s", c.User, c.Name)
-	c.Sendf("NICK %s", c.Nick)
+	err2 = c.Sendf("USER %s 0 * :%s", c.User, c.Name)
+	err3 = c.Sendf("NICK %s", c.Nick)
+	return firstError(err1, err2, err3)
 }
 
-func (c *Client) Send(s string) {
+func (c *Client) Send(s string) error {
+	ch := make(chan error)
 	select {
-	case c.chSend <- s:
+	case c.chSend <- sendMessage{s, ch}:
+		return <-ch
 	case <-c.chQuit:
+		return ErrDeadClient
 	}
 }
 
-func (c *Client) Sendf(format string, args ...interface{}) {
-	c.Send(fmt.Sprintf(format, args...))
+func (c *Client) Sendf(format string, args ...interface{}) error {
+	return c.Send(fmt.Sprintf(format, args...))
 }
 
 // Privmsg sends a PRIVMSG message to target.
-func (c *Client) Privmsg(target, message string) {
-	c.Sendf("PRIVMSG %s :%s", target, message)
+func (c *Client) Privmsg(target, message string) error {
+	return c.Sendf("PRIVMSG %s :%s", target, message)
 }
 
 // PrivmsgSplit sends a PRIVMSG message to target and splits it into
 // chunks of n. See SplitMessage for more information on how said
 // splitting is done.
-func (c *Client) PrivmsgSplit(target, message string, n int) {
+func (c *Client) PrivmsgSplit(target, message string, n int) error {
 	s := fmt.Sprintf("PRIVMSG %s :%s", target, message)
 	for _, msg := range SplitMessage(s, n) {
-		c.Send(msg)
+		err := c.Send(msg)
+		if err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 // Notice sends a NOTICE message to target.
-func (c *Client) Notice(target, message string) {
-	c.Sendf("NOTICE %s :%s", target, message)
+func (c *Client) Notice(target, message string) error {
+	return c.Sendf("NOTICE %s :%s", target, message)
 }
 
 // NoticeSplit sends a NOTICE message to target and splits it into
 // chunks of n. See SplitMessage for more information on how said
 // splitting is done.
-func (c *Client) NoticeSplit(target, message string, n int) {
+func (c *Client) NoticeSplit(target, message string, n int) error {
 	s := fmt.Sprintf("NOTICE %s :%s", target, message)
 	for _, msg := range SplitMessage(s, n) {
-		c.Send(msg)
+		err := c.Send(msg)
+		if err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
-func (c *Client) Reply(m *Message, response string) {
+func (c *Client) Reply(m *Message, response string) error {
 	if m.Command != "PRIVMSG" && m.Command != "NOTICE" {
 		panic("cannot reply to " + m.Command)
 	}
@@ -665,10 +695,10 @@ func (c *Client) Reply(m *Message, response string) {
 		// TODO message was sent to us directly, not a channel
 		target = m.Prefix.Nick
 	}
-	c.Privmsg(target, response)
+	return c.Privmsg(target, response)
 }
 
-func (c *Client) ReplySplit(m *Message, response string, n int) {
+func (c *Client) ReplySplit(m *Message, response string, n int) error {
 	if m.Command != "PRIVMSG" && m.Command != "NOTICE" {
 		panic("cannot reply to " + m.Command)
 	}
@@ -677,15 +707,15 @@ func (c *Client) ReplySplit(m *Message, response string, n int) {
 		// message was sent to us directly, not a channel
 		target = m.Prefix.Nick
 	}
-	c.PrivmsgSplit(target, response, n)
+	return c.PrivmsgSplit(target, response, n)
 }
 
-func (c *Client) ReplyCTCP(m *Message, response string) {
+func (c *Client) ReplyCTCP(m *Message, response string) error {
 	if !m.IsCTCP() {
 		panic("message is not a CTCP")
 	}
 	ctcp, _ := m.CTCP()
-	c.Notice(m.Prefix.Nick, fmt.Sprintf("%s%s %s%s", CTCPDelim, ctcp.Command, response, CTCPDelim))
+	return c.Notice(m.Prefix.Nick, fmt.Sprintf("%s%s %s%s", CTCPDelim, ctcp.Command, response, CTCPDelim))
 }
 
 func inRunes(runes []rune, search rune) bool {
@@ -773,18 +803,17 @@ func SplitMessage(s string, n int) []string {
 	return parts
 }
 
-func (c *Client) Join(channel, password string) {
+func (c *Client) Join(channel, password string) error {
 	// FIXME do not return until we actually joined the channel. or
 	// maybe put that in the framework?
 	if password == "" {
-		c.Sendf("JOIN %s", channel)
-	} else {
-		c.Sendf("JOIN %s %s", channel, password)
+		return c.Sendf("JOIN %s", channel)
 	}
+	return c.Sendf("JOIN %s %s", channel, password)
 }
 
-func (c *Client) SetNick(nick string) {
-	c.Sendf("NICK %s", nick)
+func (c *Client) SetNick(nick string) error {
+	return c.Sendf("NICK %s", nick)
 }
 
 func (c *Client) CurrentNick() string {
