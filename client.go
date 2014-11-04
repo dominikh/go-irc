@@ -294,6 +294,7 @@ func (m *Message) CTCP() (*CTCPMessage, error) {
 }
 
 type CTCPMessage struct {
+	Raw     string
 	Command string
 	Params  []string
 }
@@ -302,8 +303,8 @@ func ParseCTCP(s string) (*CTCPMessage, error) {
 	if len(s) < 2 {
 		return nil, errors.New("not a CTCP message")
 	}
-	m := &CTCPMessage{}
 	s = s[1 : len(s)-1]
+	m := &CTCPMessage{Raw: s}
 	parts := strings.Split(s, " ")
 	m.Command = parts[0]
 	if len(parts) > 1 {
