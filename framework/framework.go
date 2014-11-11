@@ -1,4 +1,4 @@
-package framework
+package framework // import "honnef.co/go/irc/framework"
 
 import (
 	"fmt"

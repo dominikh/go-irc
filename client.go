@@ -1,4 +1,4 @@
-package irc
+package irc // import "honnef.co/go/irc"
 
 import (
 	"bufio"

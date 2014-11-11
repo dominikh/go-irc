@@ -1,4 +1,4 @@
-package sasl
+package sasl // import "honnef.co/go/irc/sasl"
 
 import (
 	"encoding/base64"
